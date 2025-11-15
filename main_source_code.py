@@ -8,6 +8,7 @@ from serial import Serial
 from shutil import rmtree, move
 from pickle import loads, dumps
 from random import randint
+from pygame import display, time, font, event, Surface, QUIT, K_UP, K_DOWN, K_LEFT, K_RIGHT, K_ESCAPE, KEYUP, K_TAB, mouse, MOUSEBUTTONUP, MOUSEBUTTONDOWN, SRCALPHA
 from hashlib import md5
 from requests import get
 from win32api import GetLogicalDriveStrings
@@ -19,6 +20,8 @@ import serial.tools.list_ports
 
 def asset_load():
     try:
+        font.init()
+        asset_list["font"] = font.Font("Asset/font/font.ttf", 28)
         state[2] = "完成更新中"
         if path.exists("Cache/Updater"):
             n = 0
@@ -65,6 +68,7 @@ def asset_load():
         state[2] = "获取开源协议中"
         asset_list["mms_license"] = "skip"
         if bool(asset_list["setting"]["setting"]["license"]):
+            asset_list["fontL"] = font.Font("Asset/font/font.ttf", 18)
             asset_list["setting"]["setting"]["license"] = 0
             try:
                 asset_list["mms_license"] = get("https://gitee.com/mrdxhmagic/midi-mcstructure/raw/master/LICENSE").text.splitlines()
@@ -73,6 +77,7 @@ def asset_load():
             except Exception:
                 asset_list["mms_license"] = (["无法获取版权信息", "按任意键跳过"], 2)
                 asset_list["setting"]["setting"]["license"] = 1
+            save_json()
         if asset_list["setting"]["setting"]["id"] == -1:
             asset_list["setting"]["setting"]["id"] = 0
             message_list.append(("使用键盘的TAB键或鼠标的中键查看帮助。", -1))
@@ -991,6 +996,15 @@ def close_file():
         del page[-1]
 
 def to_alpha(origin_surf, color_value, surf_size=None, surf_position=(0, 0)):
+    if surf_size is None:
+        surf_size = origin_surf.get_size()
+    else:
+        alpha_surf = Surface(origin_surf.get_size(), SRCALPHA)
+        alpha_surf.fill((255, 255, 255, 255))
+        origin_surf.blit(alpha_surf, (0, 0), special_flags=0)
+    alpha_surf = Surface(surf_size, SRCALPHA)
+    alpha_surf.fill(color_value)
+    origin_surf.blit(alpha_surf, surf_position, special_flags=0)
     return origin_surf
 
 def uuid(n):
@@ -1001,13 +1015,108 @@ def uuid(n):
     return cmd
 
 def setting_blit(setting):
-    print("Settings:", setting)
+    global real_position
+    global progress_bar_position
+    title_alpha = 0
+    if len(message_list) != 0:
+        state[8][0] += clock.get_time()
+        if state[8][0] >= 3000:
+            state[8][1] -= (state[8][1] - 450) * speed
+        else:
+            state[8][1] -= (state[8][1] - 405) * speed
+        if state[8][1] < 450:
+            title_alpha = (450 - state[8][1]) / 45
+        blank_surface = Surface(asset_list.get("msg_size", (800, 45)), SRCALPHA)
+    else:
+        blank_surface = Surface((800, 450), SRCALPHA)
+    color = [[0, 0, 0, 0], asset_list["setting"]["setting"]["color"][0], asset_list["setting"]["setting"]["color"][1]]
+    file_offset = 0
+    setting_num = len(setting)
+    if setting_num >= 10:
+        if state[9] != -1 and state[1][0] > round_45((setting_num - 1) * state[9]):
+            state[1][2] = state[1][0]
+            state[1][0] -= 1
+            if state[1][1] > 0:
+                state[1][1] -= 1
+        elif state[9] != -1 and state[1][0] < round_45((setting_num - 1) * state[9]):
+            state[1][2] = state[1][0]
+            state[1][0] += 1
+            if state[1][1] < 9:
+                state[1][1] += 1
+        expect_position = int((state[1][0] / (setting_num - 1)) * 430)
+        if progress_bar_position < -25 and expect_position > 215:
+            progress_bar_position = 480
+        progress_bar_position -= (progress_bar_position - expect_position) * speed
+    else:
+        if progress_bar_position > 215:
+            progress_bar_position -= (progress_bar_position - 480) * speed
+            if progress_bar_position > 475:
+                progress_bar_position = -30
+        else:
+            progress_bar_position -= (progress_bar_position + 30) * speed
+    if setting_num == 0:
+        state[1] = [0, 0, -1]
+        setting.append(("无可选文件或选项", 4))
+    else:
+        if state[1][0] >= setting_num:
+            if state[4]:
+                state[1] = [setting_num - 1, 9, state[1][2]]
+            else:
+                state[1] = [0, 0, state[1][2]]
+        elif state[1][0] < 0:
+            if state[4]:
+                state[1] = [0, 0, state[1][2]]
+            else:
+                state[1] = [setting_num - 1, 9, state[1][2]]
+        if state[1][0] >= state[1][1]:
+            file_offset = state[1][0] - state[1][1]
+    file_position = int(10 + (state[1][0] - file_offset) * 43)
+    real_position -= (real_position - file_position) * speed
+    window.fill((50, 50, 50))
+    delta_position = abs(file_position - real_position) / 28
+    for a, b in enumerate(setting[file_offset:(10 + file_offset)]):
+        icon_type = int(b[1])
+        if a == state[1][0] - file_offset:
+            if a == 9 and len(message_list) != 0:
+                text_alpha = title_alpha
+            else:
+                text_alpha = delta_position
+            if text_alpha <= 1:
+                color[0] = (color[1][0] - (color[1][0] - color[2][0]) * text_alpha,
+                            color[1][1] - (color[1][1] - color[2][1]) * text_alpha,
+                            color[1][2] - (color[1][2] - color[2][2]) * text_alpha,
+                            color[1][3] - (color[1][3] - color[2][3]) * text_alpha)
+            else:
+                color[0] = color[2]
+        else:
+            if a == state[1][2] - file_offset and not (a == 9 and len(message_list) != 0):
+                if delta_position <= 1:
+                    color[0] = (color[2][0] + (color[1][0] - color[2][0]) * delta_position,
+                                color[2][1] + (color[1][1] - color[2][1]) * delta_position,
+                                color[2][2] + (color[1][2] - color[2][2]) * delta_position,
+                                color[2][3] + (color[1][3] - color[2][3]) * delta_position)
+                else:
+                    color[0] = color[1]
+            else:
+                color[0] = color[2]
+        text_surf = asset_list["font"].render(b[0], True, (255, 255, 255))
+        window.blit(text_surf, (54, a * 43 + 18))
+    if len(message_list) != 0:
+        msg_text = asset_list["font"].render(message_list[0][0], True, (255, 255, 255))
+        window.blit(msg_text, (10, state[8][1] + 8))
+        if state[8][0] >= 3250:
+            state[8][0] = 0
+            state[8][1] = 450
+            del message_list[0]
 
 log = [[False, True], ["Loading:"], ["Main:"], ["Convertor:"], ["Updater:"], ["Other:"]]
 state = [0, [0, 0, -1], "init", [0, 0, 100, True, 0, 0, False, 0, 0, 0, 0, 0], False, None, [0, 0, True], 0, [0, 0], -1]
 
 try:
+    display.init()
     DisplaySize = (800, 450)
+    window = display.set_mode(DisplaySize)
+    display.set_caption("MIDI-MCSTRUCTURE GUI")
 
     page = []
     state[8][1] = DisplaySize[1]
@@ -1022,10 +1131,85 @@ try:
     mouse_inputting = False
     progress_bar_position = 0
 
+    clock = time.Clock()
+
     while True:
         if state[7] and (state[7] == 1 or len(message_list) == 0):
             break
-        speed = 0.1
+        for env in event.get():
+            if env.type == QUIT:
+                state[7] = 1
+            if env.type == MOUSEBUTTONDOWN:
+                if state[0] != 2:
+                    if env.button == 1:
+                        if mouse.get_pos()[0] <= 10:
+                            mouse_inputting = True
+            if env.type == MOUSEBUTTONUP:
+                state[4] = True
+                if env.button == 1:
+                    if state[0] != 2:
+                        if not mouse_inputting:
+                            next_page()
+                        else:
+                            mouse_inputting = False
+                    else:
+                        state[0] = 3
+                if env.button == 2:
+                    if state[0] != 2:
+                        setting_help()
+                if env.button == 3:
+                    if state[0] != 2:
+                        last_page()
+                    else:
+                        state[0] = 3
+                if env.button == 4:
+                    if state[0] != 2:
+                        state[1][2] = state[1][0]
+                        state[1][0] -= 1
+                        if state[1][1] > 0:
+                            state[1][1] -= 1
+                if env.button == 5:
+                    if state[0] != 2:
+                        state[1][2] = state[1][0]
+                        state[1][0] += 1
+                        if state[1][1] < 9:
+                            state[1][1] += 1
+            if env.type == KEYUP:
+                state[4] = False
+                if env.key == K_ESCAPE:
+                    state[7] = 1
+                if state[0] != 2:
+                    if env.key == K_TAB:
+                        setting_help()
+                    if env.key == K_DOWN:
+                        state[1][2] = state[1][0]
+                        state[1][0] += 1
+                        if state[1][1] < 9:
+                            state[1][1] += 1
+                    if env.key == K_UP:
+                        state[1][2] = state[1][0]
+                        state[1][0] -= 1
+                        if state[1][1] > 0:
+                            state[1][1] -= 1
+                    if env.key == K_LEFT:
+                        last_page()
+                    if env.key == K_RIGHT:
+                        next_page()
+                else:
+                    state[0] = 3
+        if mouse_inputting:
+            state[9] = mouse.get_pos()[1] / 450
+            if state[9] > 1:
+                state[9] = 1
+            elif state[9] < 0:
+                state[9] = 0
+        else:
+            state[9] = -1
+        speed = clock.get_fps()
+        if speed > 10:
+            speed = 10 / speed
+        else:
+            speed = 1
         if state[0] == 0:
             Thread(target=asset_load).start()
             file_path = []
@@ -1036,10 +1220,16 @@ try:
                     file_path.append(c)
             state[0] = 1
         elif state[0] == 1:
-            print(state[2])
+            window.fill((50, 50, 50))
+            if state[2] != "init":
+                text_surf = asset_list["font"].render(state[2], True, (200, 200, 200))
+                window.blit(text_surf, (400 - text_surf.get_size()[0] * 0.5, 340))
         elif state[0] == 2:
             if asset_list["mms_license"] != "skip":
-                print("License:", asset_list["mms_license"][0])
+                window.fill((0, 0, 0))
+                for num_line, line in enumerate(asset_list["mms_license"][0]):
+                    text_surface = asset_list["fontL"].render(line, True, (255, 255, 255))
+                    window.blit(text_surface, (round_45((800 - text_surface.get_size()[0]) / 2), round_45((450 - asset_list["mms_license"][1] * 22) / 2 + num_line * 22)))
             else:
                 state[0] = 3
         elif state[0] == 3:
@@ -1132,7 +1322,8 @@ try:
                 setting_text[0][0] += "   " + str(round_45(state[6][0] / 1048576, 2)) + "/" + str(round_45(state[6][1] / 1048576, 2)) + "MB"
             setting_text += state[5]["feature"]
             setting_blit(setting_text)
-        sleep(0.1)
+        display.flip()
+        clock.tick(asset_list["fps"])
 except Exception:
         save_log(2, "E:", format_exc())
 finally:
