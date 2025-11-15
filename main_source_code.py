@@ -5,7 +5,7 @@ from json import loads as load_bytes, dumps as dump_bytes
 from mido import MidiFile, tick2second
 from pynbt import TAG_Int, TAG_String, TAG_Compound, TAG_Short, NBTFile
 from serial import Serial
-from shutil import rmtree, move
+from shutil import rmtree, move, make_archive
 from pickle import loads, dumps
 from random import randint
 from pygame import display, time, font, event, Surface, QUIT, K_UP, K_DOWN, K_LEFT, K_RIGHT, K_ESCAPE, KEYUP, K_TAB, mouse, MOUSEBUTTONUP, MOUSEBUTTONDOWN, SRCALPHA
@@ -17,6 +17,11 @@ from traceback import format_exc
 from subprocess import Popen
 from serial.serialutil import PARITY_EVEN
 import serial.tools.list_ports
+try:
+    from flask import Flask, request, send_from_directory, jsonify
+    from werkzeug.utils import secure_filename
+except Exception:
+    Flask = None
 
 def asset_load():
     try:
@@ -110,8 +115,13 @@ def structure_load(n):
     del structure
     collect()
 
-def convertor(midi_path, midi_name, cvt_setting):
-    message_id = task_id
+def convertor(midi_path, midi_name, cvt_setting, message_id=None):
+    # message_id: external task id for API or UI. If not provided, use current global snapshot.
+    if message_id is None:
+        try:
+            message_id = task_id
+        except Exception:
+            message_id = 0
     convertor_state = True
     message_list.append(["[--%] 正在加载 " + midi_name[0:-4], message_id])
     try:
@@ -670,11 +680,45 @@ def convertor(midi_path, midi_name, cvt_setting):
         save_log(3, "E:", format_exc())
     finally:
         if convertor_state is False:
-            message_list.append(("转换完成，文件已保存在程序运行目录下！", task_id))
+            message_list.append(("转换完成，文件已保存在程序运行目录下！", message_id))
+            try:
+                # try to detect output file or folder
+                # try to detect output file or folder
+                outfile = None
+                if 'output_name' in locals():
+                    try:
+                        candidate = output_name + ".mcstructure"
+                        if path.exists(candidate):
+                            outfile = path.abspath(candidate)
+                        elif path.exists(output_name) and path.isdir(output_name):
+                            # convert directory output into a zip archive for download
+                            zip_base = output_name
+                            try:
+                                make_archive(zip_base, 'zip', output_name)
+                                outfile = path.abspath(zip_base + '.zip')
+                            except Exception:
+                                outfile = path.abspath(output_name)
+                        elif path.exists(output_name):
+                            outfile = path.abspath(output_name)
+                        else:
+                            outfile = path.abspath(output_name)
+                    except Exception:
+                        outfile = None
+                if 'api_tasks' in globals() and message_id in api_tasks:
+                    api_tasks[message_id]['status'] = 'done'
+                    api_tasks[message_id]['output'] = outfile
+            except Exception:
+                pass
         else:
             if convertor_state is True:
                 convertor_state = "未知错误"
-            message_list.append(("因" + convertor_state + "无法转换 " + midi_name[0:-4], task_id))
+            message_list.append(("因" + convertor_state + "无法转换 " + midi_name[0:-4], message_id))
+            try:
+                if 'api_tasks' in globals() and message_id in api_tasks:
+                    api_tasks[message_id]['status'] = 'failed'
+                    api_tasks[message_id]['error'] = str(convertor_state)
+            except Exception:
+                pass
 
 def round_45(i, n=0):
     i = int(i * 10 ** int(n + 1))
@@ -874,8 +918,10 @@ def next_page():
             Thread(target=open_file).start()
     elif state[0] == 4:
         if state[1][0] == 0:
-            Thread(target=convertor, args=(midi_file[0], midi_file[1], state[3])).start()
+            # allocate a new task id and register
             task_id += 1
+            api_tasks[task_id] = {'status': 'queued', 'output': None, 'error': None}
+            Thread(target=convertor, args=(midi_file[0], midi_file[1], state[3], task_id)).start()
         elif state[1][0] == 1:
             state[3][0] += 10
             if state[3][0] >= 110:
@@ -1099,6 +1145,16 @@ def setting_blit(setting):
 log = [[False, True], ["Loading:"], ["Main:"], ["Convertor:"], ["Updater:"], ["Other:"]]
 state = [0, [0, 0, -1], "init", [0, 0, 100, True, 0, 0, False, 0, 0, 0, 0, 0], False, None, [0, 0, True], 0, [0, 0], -1]
 
+# API task registry for external requests
+api_tasks = {}
+# uploads folder for API
+api_upload_dir = "api_uploads"
+try:
+    if not path.exists(api_upload_dir):
+        makedirs(api_upload_dir)
+except Exception:
+    pass
+
 try:
     display.init()
     DisplaySize = (800, 450)
@@ -1119,6 +1175,58 @@ try:
     progress_bar_position = 0
 
     clock = time.Clock()
+
+    # Start lightweight API server (Flask) on port 1080 to accept uploads and status checks
+    if Flask is not None:
+        def _start_api():
+            app = Flask(__name__)
+
+            @app.route('/midi', methods=['POST'])
+            def upload_midi():
+                try:
+                    if 'file' not in request.files:
+                        return jsonify({'error': 'no file field'}), 400
+                    f = request.files['file']
+                    if f.filename == '':
+                        return jsonify({'error': 'empty filename'}), 400
+                    filename = secure_filename(f.filename)
+                    save_path = path.join(api_upload_dir, filename)
+                    f.save(save_path)
+                    # create task
+                    global task_id
+                    task_id += 1
+                    api_tasks[task_id] = {'status': 'queued', 'output': None, 'error': None, 'filename': filename}
+                    Thread(target=convertor, args=(api_upload_dir + '/', filename, state[3], task_id)).start()
+                    return jsonify({'task_id': task_id}), 200
+                except Exception as e:
+                    return jsonify({'error': str(e)}), 500
+
+            @app.route('/check/<int:tid>', methods=['GET'])
+            def check_task(tid):
+                if tid not in api_tasks:
+                    return jsonify({'error': 'unknown task id'}), 404
+                info = api_tasks[tid].copy()
+                # if done and output is a file, build download URL
+                if info.get('status') == 'done' and info.get('output'):
+                    out = info.get('output')
+                    # if output is an absolute or relative path, return a URL if file exists
+                    if out and path.exists(out):
+                        # use request.host_url as base
+                        info['download_url'] = request.host_url.rstrip('/') + '/files/' + path.basename(out)
+                return jsonify(info), 200
+
+            @app.route('/files/<path:fname>', methods=['GET'])
+            def serve_file(fname):
+                # serve from current working dir or upload dir
+                candidates = [path.abspath('.'), path.abspath(api_upload_dir)]
+                for d in candidates:
+                    if path.exists(path.join(d, fname)):
+                        return send_from_directory(d, fname, as_attachment=True)
+                return ("Not found", 404)
+
+            app.run(host='0.0.0.0', port=1080, threaded=True)
+
+        Thread(target=_start_api, daemon=True).start()
 
     while True:
         if state[7] and (state[7] == 1 or len(message_list) == 0):

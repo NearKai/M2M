@@ -1,0 +1,8 @@
+Flask
+Werkzeug
+mido
+pynbt
+pygame
+requests
+pyserial
+py7zr
