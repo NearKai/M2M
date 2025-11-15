@@ -1154,6 +1154,9 @@ try:
         makedirs(api_upload_dir)
 except Exception:
     pass
+# API bind settings
+api_host = '127.0.0.1'
+api_port = 1080
 
 try:
     display.init()
@@ -1224,7 +1227,17 @@ try:
                         return send_from_directory(d, fname, as_attachment=True)
                 return ("Not found", 404)
 
-            app.run(host='0.0.0.0', port=1080, threaded=True)
+            @app.route('/', methods=['GET'])
+            def serve_test_page():
+                # serve a simple HTML test page bundled in repo root
+                try:
+                    if path.exists(path.join(path.abspath('.'), 'api_test.html')):
+                        return send_from_directory(path.abspath('.'), 'api_test.html')
+                except Exception:
+                    pass
+                return ("<html><body><h3>API test page not found</h3></body></html>", 200)
+
+            app.run(host=api_host, port=api_port, threaded=True)
 
         Thread(target=_start_api, daemon=True).start()
 

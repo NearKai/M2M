@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>MIDI-MCSTRUCTURE API 测试</title>
+  <style>
+    body{font-family: Arial, Helvetica, sans-serif; padding:20px}
+    .box{max-width:760px;margin:0 auto}
+    input[type=file]{display:block;margin-bottom:10px}
+    button{margin-right:8px}
+    pre{background:#f4f4f4;padding:10px;border-radius:4px}
+  </style>
+</head>
+<body>
+<div class="box">
+  <h2>MIDI API 测试页面</h2>
+  <p>上传一个 .mid 文件到 <code>/midi</code>，返回 <code>task_id</code>，可用 <code>/check/:id</code> 检查状态并获取下载链接。</p>
+
+  <label>选择 MIDI 文件：</label>
+  <input id="fileInput" type="file" accept=".mid" />
+  <button id="uploadBtn">上传并开始转换</button>
+  <button id="clearBtn">清除</button>
+
+  <h3>结果</h3>
+  <div>
+    <strong>Task ID:</strong> <span id="taskId">—</span>
+  </div>
+  <div style="margin-top:8px">
+    <button id="checkBtn">检查状态</button>
+    <input id="checkIdInput" placeholder="或输入task id检查" style="width:140px" />
+  </div>
+
+  <h3>详细信息</h3>
+  <pre id="result">—</pre>
+</div>
+
+<script>
+const uploadBtn = document.getElementById('uploadBtn');
+const clearBtn = document.getElementById('clearBtn');
+const fileInput = document.getElementById('fileInput');
+const taskIdSpan = document.getElementById('taskId');
+const resultPre = document.getElementById('result');
+const checkBtn = document.getElementById('checkBtn');
+const checkIdInput = document.getElementById('checkIdInput');
+
+function appendResult(obj){
+  try{ resultPre.textContent = JSON.stringify(obj, null, 2); }catch(e){ resultPre.textContent = String(obj); }
+}
+
+uploadBtn.addEventListener('click', async ()=>{
+  const f = fileInput.files[0];
+  if(!f){ alert('请先选择一个 .mid 文件'); return; }
+  const fd = new FormData();
+  fd.append('file', f);
+  appendResult('上传中...');
+  try{
+    const resp = await fetch('/midi', { method: 'POST', body: fd });
+    const j = await resp.json();
+    appendResult(j);
+    if(resp.ok && j.task_id){
+      taskIdSpan.textContent = j.task_id;
+      checkIdInput.value = j.task_id;
+    }else{
+      taskIdSpan.textContent = '错误';
+    }
+  }catch(e){ appendResult('请求失败: '+e); }
+});
+
+clearBtn.addEventListener('click', ()=>{
+  fileInput.value = '';
+  taskIdSpan.textContent = '—';
+  resultPre.textContent = '—';
+  checkIdInput.value = '';
+});
+
+checkBtn.addEventListener('click', async ()=>{
+  const tid = (checkIdInput.value || taskIdSpan.textContent || '').toString().trim();
+  if(!tid){ alert('请提供 task id'); return; }
+  appendResult('查询中...');
+  try{
+    const resp = await fetch('/check/'+encodeURIComponent(tid));
+    const j = await resp.json();
+    appendResult(j);
+    if(j.download_url){
+      const link = '\n\n下载链接：' + j.download_url + '\n(在浏览器打开即可下载)';
+      resultPre.textContent += link;
+    }
+  }catch(e){ appendResult('请求失败: '+e); }
+});
+</script>
+</body>
+</html>
