@@ -1,5 +1,6 @@
 Flask
 Werkzeug
+Flask-CORS
 mido
 pynbt
 pygame

@@ -20,8 +20,10 @@ import serial.tools.list_ports
 try:
     from flask import Flask, request, send_from_directory, jsonify
     from werkzeug.utils import secure_filename
+    from flask_cors import CORS
 except Exception:
     Flask = None
+    CORS = None
 
 def asset_load():
     try:
@@ -1183,6 +1185,8 @@ try:
     if Flask is not None:
         def _start_api():
             app = Flask(__name__)
+            if CORS is not None:
+                CORS(app, resources={r"/*": {"origins": "*"}})
 
             @app.route('/midi', methods=['POST'])
             def upload_midi():
