@@ -1076,31 +1076,18 @@ def setting_blit(setting):
     delta_position = abs(file_position - real_position) / 28
     for a, b in enumerate(setting[file_offset:(10 + file_offset)]):
         icon_type = int(b[1])
+        y = a * 43 + 18
+        # 高亮当前选中项
         if a == state[1][0] - file_offset:
-            if a == 9 and len(message_list) != 0:
-                text_alpha = title_alpha
-            else:
-                text_alpha = delta_position
-            if text_alpha <= 1:
-                color[0] = (color[1][0] - (color[1][0] - color[2][0]) * text_alpha,
-                            color[1][1] - (color[1][1] - color[2][1]) * text_alpha,
-                            color[1][2] - (color[1][2] - color[2][2]) * text_alpha,
-                            color[1][3] - (color[1][3] - color[2][3]) * text_alpha)
-            else:
-                color[0] = color[2]
+            # 绘制蓝色高亮背景
+            highlight_rect = Surface((700, 40), SRCALPHA)
+            highlight_rect.fill((60, 120, 255, 180))
+            window.blit(highlight_rect, (40, y-4))
+            text_color = (255, 255, 255)
         else:
-            if a == state[1][2] - file_offset and not (a == 9 and len(message_list) != 0):
-                if delta_position <= 1:
-                    color[0] = (color[2][0] + (color[1][0] - color[2][0]) * delta_position,
-                                color[2][1] + (color[1][1] - color[2][1]) * delta_position,
-                                color[2][2] + (color[1][2] - color[2][2]) * delta_position,
-                                color[2][3] + (color[1][3] - color[2][3]) * delta_position)
-                else:
-                    color[0] = color[1]
-            else:
-                color[0] = color[2]
-        text_surf = asset_list["font"].render(b[0], True, (255, 255, 255))
-        window.blit(text_surf, (54, a * 43 + 18))
+            text_color = (200, 200, 200)
+        text_surf = asset_list["font"].render(b[0], True, text_color)
+        window.blit(text_surf, (54, y))
     if len(message_list) != 0:
         msg_text = asset_list["font"].render(message_list[0][0], True, (255, 255, 255))
         window.blit(msg_text, (10, state[8][1] + 8))
