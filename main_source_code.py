@@ -845,12 +845,23 @@ task_id = 0
 try:
     # 加载配置资源
     asset_load()
-    
+
     print("✓ MIDI-MCSTRUCTURE API 服务启动中...")
-    print(f"✓ API 地址: http://{api_host}:{api_port}")
-    print("✓ 可用端点: POST /midi (上传), GET /check/<task_id> (查询), GET /files/<filename> (下载)")
-    
-    # Start lightweight API server (Flask) on port 1080 to accept uploads and status checks
+    # 自动检测端口是否被占用，若被占用则递增端口号
+    def find_free_port(host, start_port, max_tries=20):
+        import socket
+        port = start_port
+        for _ in range(max_tries):
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            try:
+                s.bind((host, port))
+                s.close()
+                return port
+            except OSError:
+                port += 1
+                s.close()
+        return None
+
     if Flask is not None:
         def _start_api():
             app = Flask(__name__)
@@ -910,10 +921,19 @@ try:
                     pass
                 return ("<html><body><h3>API test page not found</h3></body></html>", 200)
 
+            # 查找可用端口
+            global api_port
+            free_port = find_free_port(api_host, api_port)
+            if free_port is None:
+                print(f"✗ 未找到可用端口（尝试范围：{api_port}-{api_port+19}），API服务无法启动。")
+                return
+            api_port = free_port
+            print(f"✓ API 地址: http://{api_host}:{api_port}")
+            print("✓ 可用端点: POST /midi (上传), GET /check/<task_id> (查询), GET /files/<filename> (下载)")
             app.run(host=api_host, port=api_port, threaded=True)
 
         Thread(target=_start_api, daemon=True).start()
-        
+
         # 保持主线程运行
         try:
             while True:
@@ -922,7 +942,7 @@ try:
             print("\n✓ API 服务已停止")
     else:
         print("✗ Flask 未安装，无法启动 API 服务")
-        
+
 except Exception:
     save_log(2, "E:", format_exc())
 finally:
