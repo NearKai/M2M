@@ -20,7 +20,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # 复制应用程序代码到工作目录
 COPY main_source_code.py .
 COPY Asset/ ./Asset/
-COPY api_uploads/ ./api_uploads/ 2>/dev/null || true
+# 如果宿主机没有 `api_uploads` 目录，直接在镜像内创建该目录，避免 COPY 失败
+RUN mkdir -p /app/api_uploads
 
 # 暴露 API 服务端口
 EXPOSE 1080
