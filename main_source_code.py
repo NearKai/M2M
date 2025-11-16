@@ -8,10 +8,8 @@ from serial import Serial
 from shutil import rmtree, move, make_archive
 from pickle import loads, dumps
 from random import randint
-from pygame import display, time, font, event, Surface, QUIT, K_UP, K_DOWN, K_LEFT, K_RIGHT, K_ESCAPE, KEYUP, K_TAB, mouse, MOUSEBUTTONUP, MOUSEBUTTONDOWN, SRCALPHA
 from hashlib import md5
 from requests import get
-from win32api import GetLogicalDriveStrings
 from threading import Thread
 from traceback import format_exc
 from subprocess import Popen
@@ -26,10 +24,8 @@ except Exception:
     CORS = None
 
 def asset_load():
+    """加载配置文件和资源"""
     try:
-        font.init()
-        asset_list["font"] = font.Font("Asset/font/font.ttf", 28)
-        state[2] = "完成更新中"
         if path.exists("Cache/Updater"):
             n = 0
             while n <= 16:
@@ -41,7 +37,7 @@ def asset_load():
                     n += 1
             move("Cache/Updater", "Updater")
             rmtree("Cache")
-        state[2] = "加载配置文件中"
+        
         with open("Asset/text/setting.json", "rb") as io:
             asset_list["setting"] = load_bytes(io.read())
         asset_list["fps"] = asset_list["setting"]["setting"]["fps"]
@@ -55,6 +51,7 @@ def asset_load():
         state[3][9] = int(asset_list["setting"]["setting"]["adjust_pitch"])
         state[3][10] = bool(asset_list["setting"]["setting"]["adjust_instrument"])
         log[0][1] = bool(asset_list["setting"]["setting"]["log_level"])
+        
         with open("Asset/text/manifest.json", "rb") as io:
             asset_list["manifest"] = dumps(load_bytes(io.read()))
         asset_list["profile"] = []
@@ -65,40 +62,16 @@ def asset_load():
                     asset_list["profile"].insert(0, (i["description"]["name"], i))
                 else:
                     asset_list["profile"].append((i["description"]["name"], i))
-        if bool(asset_list["setting"]["setting"]["check_update"]):
-            Thread(target=get_update_log).start()
-        state[2] = "加载结构模板中"
+        
         asset_list["structure_file"] = []
         for n in listdir("Asset/mcstructure"):
             if path.splitext(n)[1] == ".mcstructure":
                 Thread(target=structure_load, args=[n]).start()
-        state[2] = "获取开源协议中"
-        asset_list["mms_license"] = "skip"
-        if bool(asset_list["setting"]["setting"]["license"]):
-            asset_list["fontL"] = font.Font("Asset/font/font.ttf", 18)
-            asset_list["setting"]["setting"]["license"] = 0
-            try:
-                asset_list["mms_license"] = get("https://gitee.com/mrdxhmagic/midi-mcstructure/raw/master/LICENSE").text.splitlines()
-                asset_list["mms_license"] += ["", "按任意键进入软件"]
-                asset_list["mms_license"] = (asset_list["mms_license"], len(asset_list["mms_license"]))
-            except Exception:
-                asset_list["mms_license"] = (["无法获取版权信息", "按任意键跳过"], 2)
-                asset_list["setting"]["setting"]["license"] = 1
-            save_json()
-        if asset_list["setting"]["setting"]["id"] == -1:
-            asset_list["setting"]["setting"]["id"] = 0
-            message_list.append(("使用键盘的TAB键或鼠标的中键查看帮助。", -1))
-        else:
-            message_list.append(("欢迎使用 MIDI-MCSTRUCTURE V" + asset_list["setting"]["setting"]["version"] + "-" + asset_list["setting"]["setting"]["edition"], -1))
-        state[2] = "done"
+        
+        print("✓ 配置文件加载完成")
     except Exception:
         save_log(1, "E:", format_exc())
     finally:
-        if state[2] != "done":
-            state[2] = "加载失败，请重试"
-        else:
-            state[2] = "加载完成"
-            state[0] = 2
         collect()
 
 def structure_load(n):
@@ -777,21 +750,6 @@ def to_text(i, n):
         i = i[-n:]
     return i
 
-def get_update_log():
-    try:
-        update_log = load_bytes(get("https://gitee.com/mrdxhmagic/midi-mcstructure/raw/master/Update.json").content)
-        n = {"version": 0}
-        for i in update_log:
-            if len(str(i["version"])) == 8 and int(n["version"]) < int(i["version"]):
-                n = i
-        del update_log
-        if n["version"] not in asset_list["setting"]["setting"]["exceptional_version"] and int(n["version"]) > int(asset_list["setting"]["setting"]["version"]):
-            state[5] = n
-    except Exception:
-        save_log(4, "E:", format_exc())
-    finally:
-        collect()
-
 def download():
     try:
         if path.exists("Asset/update"):
@@ -820,51 +778,6 @@ def download():
         message_list.append(("下载失败，请重试。", -1))
         save_log(4, "E:", format_exc())
 
-def setting_help():
-    if state[0] == 3:
-        if state[4]:
-            message_list.append(("鼠标左键打开文件，右键返回，滚轮切换", -1))
-        else:
-            message_list.append(("键盘右方向键打开文件，左方向键返回，上下方向键切换", -1))
-    elif state[0] == 4:
-        if state[1][0] == 0:
-            if state[4]:
-                message_list.append(("点击鼠标左键应用设置并开始转换", -1))
-            else:
-                message_list.append(("点击键盘右方向键应用设置并开始转换", -1))
-        elif state[1][0] == 1:
-            message_list.append(("使不同音乐间的音量与设定值一致，统一听感", -1))
-        elif state[1][0] == 2:
-            message_list.append(("调整音乐的播放速度，一般用于缓解音频卡顿", -1))
-        elif state[1][0] == 3:
-            message_list.append(("跳过音乐开头静音的部分，大部分情况下建议开启", -1))
-        elif state[1][0] == 4:
-            message_list.append(("决定是否处理打击乐器（通道10上的乐器）", -1))
-        elif state[1][0] == 5:
-            message_list.append(("选择控制播放时序的方式，一般选择低卡顿的命令链延迟", -1))
-        elif state[1][0] == 6:
-            message_list.append(("决定是否重命名命令方块名称为音符的序号和音乐名称", -1))
-        elif state[1][0] == 7:
-            message_list.append(("决定输出文件类型，mcfunction不支持命令链延迟模式", -1))
-        elif state[1][0] == 8:
-            if state[3][7] == 0:
-                message_list.append(("决定命令链排列方式，均为普通结构文件，用户可自制模板", -1))
-            elif state[3][7] == 3:
-                message_list.append(("选择一个受支持的串口设备，来向其传输音乐数据", -1))
-        elif state[1][0] == 9:
-            message_list.append(("自动升降音调并去除部分音符来适配JE版我的世界的音域", -1))
-        elif state[1][0] == 10:
-            message_list.append(("根据配置文件调整一些乐器的响度和音调，使其效果更自然", -1))
-        elif state[1][0] == 11:
-            message_list.append(("选择乐器和指令方案，以达到不同的播放效果", -1))
-    elif state[0] == 5:
-        if state[1][0] == 0:
-            if state[4]:
-                message_list.append(("点击鼠标左键开始下载并应用更新", -1))
-            else:
-                message_list.append(("点击键盘右方向键开始下载并应用更新", -1))
-        elif state[1][0] == 1:
-            message_list.append(("不再显示该版本更新的提示", -1))
 
 def list_position(size, pos):
     n = pos[2]
@@ -891,169 +804,15 @@ def check(size, pos):
     else:
         return True
 
-def next_page():
-    global midi_file
-    global task_id
-    if state[0] == 3:
-        if (not state[5] is None) and (len(page) == 0 and state[1][0] == len(file_path)):
-            page.append([state[1][0], state[1][1], -1])
-            state[1] = [0, 0, -1]
-            state[0] = 5
-        elif len(file_path) > state[1][0] and path.splitext(file_path[state[1][0]])[1] == ".mid":
-            page.append([state[1][0], state[1][1], -1])
-            j = ""
-            for k in real_path:
-                j += k
-            if not j == "":
-                j += "/"
-            midi_file = (j, file_path[state[1][0]])
-            state[1] = [0, 0, -1]
-            state[0] = 4
-            asset_list["serial_list"] = []
-            for n, i in enumerate(serial.tools.list_ports.comports()):
-                i = tuple(i)
-                if "Arduino Leonardo" in i[1]:
-                    asset_list["serial_list"].insert(0, i)
-                else:
-                    asset_list["serial_list"].append(i)
-        else:
-            Thread(target=open_file).start()
-    elif state[0] == 4:
-        if state[1][0] == 0:
-            # allocate a new task id and register
-            task_id += 1
-            api_tasks[task_id] = {'status': 'queued', 'output': None, 'error': None}
-            Thread(target=convertor, args=(midi_file[0], midi_file[1], state[3], task_id)).start()
-        elif state[1][0] == 1:
-            state[3][0] += 10
-            if state[3][0] >= 110:
-                state[3][0] = 0
-        elif state[1][0] == 2:
-            state[3][2] += 5
-            if state[3][2] >= 130:
-                state[3][2] = 75
-        elif state[1][0] == 3:
-            if state[3][3]:
-                state[3][3] = False
-            else:
-                state[3][3] = True
-        elif state[1][0] == 4:
-            if state[3][4]:
-                state[3][4] = False
-            else:
-                state[3][4] = True
-        elif state[1][0] == 5:
-            state[3][5] += 1
-            if state[3][5] >= 3:
-                state[3][5] = 0
-        elif state[1][0] == 6:
-            if state[3][6]:
-                state[3][6] = False
-            else:
-                state[3][6] = True
-        elif state[1][0] == 7:
-            state[3][7] += 1
-            if state[3][7] >= 4:
-                state[3][7] = 0
-        elif state[1][0] == 8:
-            if state[3][7] == 0 and "structure_file" in asset_list:
-                state[3][1] += 1
-                if state[3][1] >= len(asset_list["structure_file"]):
-                    state[3][1] = 0
-            elif state[3][7] == 3 and len(asset_list["serial_list"]) != 0:
-                state[3][8] += 1
-                if state[3][8] >= len(asset_list["serial_list"]):
-                    state[3][8] = 0
-        elif state[1][0] == 9:
-            state[3][9] += 1
-            if state[3][9] >= 3:
-                state[3][9] = 0
-        elif state[1][0] == 10:
-            if state[3][10]:
-                state[3][10] = False
-            else:
-                state[3][10] = True
-        elif state[1][0] == 11:
-            state[3][11] += 1
-            if state[3][11] >= len(asset_list["profile"]):
-                state[3][11] = 0
-    elif state[0] == 5:
-        if state[6][2] and state[1][0] == 0:
-            Thread(target=download).start()
-            state[6][2] = False
-        elif state[1][0] == 1:
-            asset_list["setting"]["setting"]["exceptional_version"].append(state[5]["version"])
-            state[0] = 3
-            state[1] = page[-1]
-            del page[-1]
-            state[5] = None
-            message_list.append(("已忽略此次更新。", -1))
+# GUI 函数已删除
 
-def last_page():
-    if state[0] == 3:
-        Thread(target=close_file).start()
-    elif state[0] == 4:
-        state[0] = 3
-        state[1] = page[-1]
-        del page[-1]
-    elif state[0] == 5:
-        state[0] = 3
-        state[1] = page[-1]
-        del page[-1]
 
-def open_file():
-    global file_path
-    if 0 <= state[1][0] < len(file_path):
-        real_path.append(file_path[state[1][0]] + "/")
-        e = ""
-        for f in real_path:
-            e += f
-        if path.isdir(e):
-            file_path = []
-            page.append([state[1][0], state[1][1], -1])
-            state[1] = [0, 0, -1]
-            for f in listdir(e):
-                if path.isdir(e + f) or path.splitext(e + f)[1] == ".mid":
-                    if f[0] != ".":
-                        file_path.append(f)
-        else:
-            del real_path[-1]
 
-def close_file():
-    global file_path
-    if 0 < len(real_path):
-        del real_path[-1]
-        if len(real_path) == 0:
-            file_path = []
-            for e in GetLogicalDriveStrings().split("\000")[:-1]:
-                file_path.append(e[0:-2] + ":/")
-            for e in listdir():
-                if path.splitext(e)[1] == ".mid":
-                    if e[0] != ".":
-                        file_path.append(e)
-        else:
-            f = ""
-            for e in real_path:
-                f += e
-            file_path = []
-            for e in listdir(f):
-                if path.isdir(f + e) or path.splitext(f + e)[1] == ".mid":
-                    if e[0] != ".":
-                        file_path.append(e)
-        state[1] = page[-1]
-        del page[-1]
 
-def to_alpha(origin_surf, color_value, surf_size=None, surf_position=(0, 0)):
-    if surf_size is None:
-        surf_size = origin_surf.get_size()
-    else:
-        alpha_surf = Surface(origin_surf.get_size(), SRCALPHA)
-        alpha_surf.fill((255, 255, 255, 255))
-        origin_surf.blit(alpha_surf, (0, 0), special_flags=0)
-    alpha_surf = Surface(surf_size, SRCALPHA)
-    alpha_surf.fill(color_value)
-    origin_surf.blit(alpha_surf, surf_position, special_flags=0)
-    return origin_surf
+
+
+
+
 
 def uuid(n):
     cmd = ""
@@ -1061,88 +820,6 @@ def uuid(n):
         cmd += str(hex(randint(0, 15)))[2:]
         n -= 1
     return cmd
-
-def setting_blit(setting):
-    global real_position
-    global progress_bar_position
-    title_alpha = 0
-    if len(message_list) != 0:
-        state[8][0] += clock.get_time()
-        if state[8][0] >= 3000:
-            state[8][1] -= (state[8][1] - 450) * speed
-        else:
-            state[8][1] -= (state[8][1] - 405) * speed
-        if state[8][1] < 450:
-            title_alpha = (450 - state[8][1]) / 45
-        blank_surface = Surface(asset_list.get("msg_size", (800, 45)), SRCALPHA)
-    else:
-        blank_surface = Surface((800, 450), SRCALPHA)
-    color = [[0, 0, 0, 0], asset_list["setting"]["setting"]["color"][0], asset_list["setting"]["setting"]["color"][1]]
-    file_offset = 0
-    setting_num = len(setting)
-    if setting_num >= 10:
-        if state[9] != -1 and state[1][0] > round_45((setting_num - 1) * state[9]):
-            state[1][2] = state[1][0]
-            state[1][0] -= 1
-            if state[1][1] > 0:
-                state[1][1] -= 1
-        elif state[9] != -1 and state[1][0] < round_45((setting_num - 1) * state[9]):
-            state[1][2] = state[1][0]
-            state[1][0] += 1
-            if state[1][1] < 9:
-                state[1][1] += 1
-        expect_position = int((state[1][0] / (setting_num - 1)) * 430)
-        if progress_bar_position < -25 and expect_position > 215:
-            progress_bar_position = 480
-        progress_bar_position -= (progress_bar_position - expect_position) * speed
-    else:
-        if progress_bar_position > 215:
-            progress_bar_position -= (progress_bar_position - 480) * speed
-            if progress_bar_position > 475:
-                progress_bar_position = -30
-        else:
-            progress_bar_position -= (progress_bar_position + 30) * speed
-    if setting_num == 0:
-        state[1] = [0, 0, -1]
-        setting.append(("无可选文件或选项", 4))
-    else:
-        if state[1][0] >= setting_num:
-            if state[4]:
-                state[1] = [setting_num - 1, 9, state[1][2]]
-            else:
-                state[1] = [0, 0, state[1][2]]
-        elif state[1][0] < 0:
-            if state[4]:
-                state[1] = [0, 0, state[1][2]]
-            else:
-                state[1] = [setting_num - 1, 9, state[1][2]]
-        if state[1][0] >= state[1][1]:
-            file_offset = state[1][0] - state[1][1]
-    file_position = int(10 + (state[1][0] - file_offset) * 43)
-    real_position -= (real_position - file_position) * speed
-    window.fill((50, 50, 50))
-    delta_position = abs(file_position - real_position) / 28
-    for a, b in enumerate(setting[file_offset:(10 + file_offset)]):
-        icon_type = int(b[1])
-        y = a * 43 + 18
-        # 高亮当前选中项
-        if a == state[1][0] - file_offset:
-            # 绘制蓝色高亮背景
-            highlight_rect = Surface((700, 40), SRCALPHA)
-            highlight_rect.fill((60, 120, 255, 180))
-            window.blit(highlight_rect, (40, y-4))
-            text_color = (255, 255, 255)
-        else:
-            text_color = (200, 200, 200)
-        text_surf = asset_list["font"].render(b[0], True, text_color)
-        window.blit(text_surf, (54, y))
-    if len(message_list) != 0:
-        msg_text = asset_list["font"].render(message_list[0][0], True, (255, 255, 255))
-        window.blit(msg_text, (10, state[8][1] + 8))
-        if state[8][0] >= 3250:
-            state[8][0] = 0
-            state[8][1] = 450
-            del message_list[0]
 
 log = [[False, True], ["Loading:"], ["Main:"], ["Convertor:"], ["Updater:"], ["Other:"]]
 state = [0, [0, 0, -1], "init", [0, 0, 100, True, 0, 0, False, 0, 0, 0, 0, 0], False, None, [0, 0, True], 0, [0, 0], -1]
@@ -1160,27 +837,19 @@ except Exception:
 api_host = '127.0.0.1'
 api_port = 1080
 
+# Initialize global variables
+asset_list = {"fps": 60}
+message_list = []
+task_id = 0
+
 try:
-    display.init()
-    DisplaySize = (800, 450)
-    window = display.set_mode(DisplaySize)
-    display.set_caption("MIDI-MCSTRUCTURE GUI")
-
-    page = []
-    state[8][1] = DisplaySize[1]
-    file_path = []
-    real_path = []
-    midi_file = []
-    asset_list = {"fps": 60}
-    message_list = []
-    task_id = 0
-    press_time = 0
-    real_position = 0
-    mouse_inputting = False
-    progress_bar_position = 0
-
-    clock = time.Clock()
-
+    # 加载配置资源
+    asset_load()
+    
+    print("✓ MIDI-MCSTRUCTURE API 服务启动中...")
+    print(f"✓ API 地址: http://{api_host}:{api_port}")
+    print("✓ 可用端点: POST /midi (上传), GET /check/<task_id> (查询), GET /files/<filename> (下载)")
+    
     # Start lightweight API server (Flask) on port 1080 to accept uploads and status checks
     if Flask is not None:
         def _start_api():
@@ -1204,7 +873,7 @@ try:
                     task_id += 1
                     api_tasks[task_id] = {'status': 'queued', 'output': None, 'error': None, 'filename': filename}
                     Thread(target=convertor, args=(api_upload_dir + '/', filename, state[3], task_id)).start()
-                    return jsonify({'task_id': task_id}), 200
+                    return jsonify({'task_id': task_id, 'filename': filename, 'status': 'queued', 'output': None, 'error': None}), 200
                 except Exception as e:
                     return jsonify({'error': str(e)}), 500
 
@@ -1244,200 +913,18 @@ try:
             app.run(host=api_host, port=api_port, threaded=True)
 
         Thread(target=_start_api, daemon=True).start()
-
-    while True:
-        if state[7] and (state[7] == 1 or len(message_list) == 0):
-            break
-        for env in event.get():
-            if env.type == QUIT:
-                state[7] = 1
-            if env.type == MOUSEBUTTONDOWN:
-                if state[0] != 2:
-                    if env.button == 1:
-                        if mouse.get_pos()[0] <= 10:
-                            mouse_inputting = True
-            if env.type == MOUSEBUTTONUP:
-                state[4] = True
-                if env.button == 1:
-                    if state[0] != 2:
-                        if not mouse_inputting:
-                            next_page()
-                        else:
-                            mouse_inputting = False
-                    else:
-                        state[0] = 3
-                if env.button == 2:
-                    if state[0] != 2:
-                        setting_help()
-                if env.button == 3:
-                    if state[0] != 2:
-                        last_page()
-                    else:
-                        state[0] = 3
-                if env.button == 4:
-                    if state[0] != 2:
-                        state[1][2] = state[1][0]
-                        state[1][0] -= 1
-                        if state[1][1] > 0:
-                            state[1][1] -= 1
-                if env.button == 5:
-                    if state[0] != 2:
-                        state[1][2] = state[1][0]
-                        state[1][0] += 1
-                        if state[1][1] < 9:
-                            state[1][1] += 1
-            if env.type == KEYUP:
-                state[4] = False
-                if env.key == K_ESCAPE:
-                    state[7] = 1
-                if state[0] != 2:
-                    if env.key == K_TAB:
-                        setting_help()
-                    if env.key == K_DOWN:
-                        state[1][2] = state[1][0]
-                        state[1][0] += 1
-                        if state[1][1] < 9:
-                            state[1][1] += 1
-                    if env.key == K_UP:
-                        state[1][2] = state[1][0]
-                        state[1][0] -= 1
-                        if state[1][1] > 0:
-                            state[1][1] -= 1
-                    if env.key == K_LEFT:
-                        last_page()
-                    if env.key == K_RIGHT:
-                        next_page()
-                else:
-                    state[0] = 3
-        if mouse_inputting:
-            state[9] = mouse.get_pos()[1] / 450
-            if state[9] > 1:
-                state[9] = 1
-            elif state[9] < 0:
-                state[9] = 0
-        else:
-            state[9] = -1
-        speed = clock.get_fps()
-        if speed > 10:
-            speed = 10 / speed
-        else:
-            speed = 1
-        if state[0] == 0:
-            Thread(target=asset_load).start()
-            file_path = []
-            for c in GetLogicalDriveStrings().split("\000")[:-1]:
-                file_path.append(c[0:-2] + ":/")
-            for c in listdir():
-                if path.splitext(c)[1] == ".mid":
-                    file_path.append(c)
-            state[0] = 1
-        elif state[0] == 1:
-            window.fill((50, 50, 50))
-            if state[2] != "init":
-                text_surf = asset_list["font"].render(state[2], True, (200, 200, 200))
-                window.blit(text_surf, (400 - text_surf.get_size()[0] * 0.5, 340))
-        elif state[0] == 2:
-            if asset_list["mms_license"] != "skip":
-                window.fill((0, 0, 0))
-                for num_line, line in enumerate(asset_list["mms_license"][0]):
-                    text_surface = asset_list["fontL"].render(line, True, (255, 255, 255))
-                    window.blit(text_surface, (round_45((800 - text_surface.get_size()[0]) / 2), round_45((450 - asset_list["mms_license"][1] * 22) / 2 + num_line * 22)))
-            else:
-                state[0] = 3
-        elif state[0] == 3:
-            setting_text = []
-            for c in file_path:
-                if path.splitext(c)[1] == ".mid":
-                    setting_text.append((c, 3))
-                else:
-                    setting_text.append((c, 0))
-            if len(page) == 0 and not state[5] is None:
-                if state[6][0] == 0:
-                    setting_text.append(["发现更新 V" + str(state[5]["version"]) + "-" + str(state[5]["edition"]), 6])
-                else:
-                    setting_text.append(["正在下载 V" + str(state[5]["version"]) + "-" + str(state[5]["edition"]), 6])
-            setting_blit(setting_text)
-        elif state[0] == 4:
-            setting_text = ([["开始转换  ", 2], ["音量均衡  ", 1], ["播放速度  ", 1], ["静音跳过  ", 1],
-                             ["打击乐器  ", 1], ["播放模式  ", 1], ["添加序号  ", 1], ["输出模式  ", 1],
-                             ["暂无选项  ", 1], ["音域调整  ", 1], ["乐器调整  ", 1], ["配置文件  ", 1]])
-            setting_text[0][0] += midi_file[1][0:-4]
-            if state[3][0] == 0:
-                setting_text[1][0] += "关"
-            else:
-                setting_text[1][0] += str(state[3][0]) + "%"
-            setting_text[2][0] += str(state[3][2] / 100)
-            if state[3][2] % 10 == 0:
-                setting_text[2][0] += "0"
-            setting_text[2][0] += "倍"
-            if state[3][3]:
-                setting_text[3][0] += "开"
-            else:
-                setting_text[3][0] += "关"
-            if state[3][4]:
-                setting_text[4][0] += "正常"
-            else:
-                setting_text[4][0] += "忽略"
-            if state[3][5] == 0:
-                setting_text[5][0] += "命令链延迟"
-            elif state[3][5] == 1:
-                setting_text[5][0] += "计分板时钟"
-            elif state[3][5] == 2:
-                setting_text[5][0] += "时钟与编号"
-            if state[3][6]:
-                setting_text[6][0] += "开"
-            else:
-                setting_text[6][0] += "关"
-            if state[3][7] == 0:
-                setting_text[7][0] += ".mcstructure"
-                setting_text[8] = ["结构模板  ", 1]
-                if asset_list.get("structure_file"):
-                    setting_text[8][0] += asset_list["structure_file"][state[3][1]][1]
-            elif state[3][7] == 1:
-                setting_text[7][0] += ".mcfunction (BE)"
-                if state[3][5] == 0:
-                    setting_text[5][1] = 4
-            elif state[3][7] == 2:
-                setting_text[7][0] += ".mcfunction (JE)"
-                if state[3][5] == 0:
-                    setting_text[5][1] = 4
-                if state[3][9] == 0:
-                    setting_text[9][1] = 4
-            elif state[3][7] == 3:
-                setting_text[7][0] += "串口设备"
-                setting_text[8] = ["串口设备  ", 1]
-                if len(asset_list["serial_list"]) != 0:
-                    setting_text[8][0] += asset_list["serial_list"][state[3][8]][1]
-            if state[3][9] == 0:
-                setting_text[9][0] += "直出 (BE)"
-            elif state[3][9] == 1:
-                setting_text[9][0] += "限幅 (JE)"
-            elif state[3][9] == 2:
-                setting_text[9][0] += "自动 (JE)"
-            if state[3][10]:
-                setting_text[10][0] += "开"
-            else:
-                setting_text[10][0] += "关"
-            if len(asset_list["profile"]) != 0:
-                setting_text[11][0] += asset_list["profile"][state[3][11]][0]
-            setting_blit(setting_text)
-        elif state[0] == 5:
-            if state[6][1] == 0:
-                setting_text = [["立即更新  V", 2]]
-            elif state[6][0] == state[6][1]:
-                setting_text = [["即将更新  V", 2]]
-            else:
-                setting_text = [["正在下载  V", 2]]
-            setting_text.append(["忽略更新", 1])
-            setting_text[0][0] += str(state[5]["version"]) + "-" + str(state[5]["edition"])
-            if state[6][0] != state[6][1]:
-                setting_text[0][0] += "   " + str(round_45(state[6][0] / 1048576, 2)) + "/" + str(round_45(state[6][1] / 1048576, 2)) + "MB"
-            setting_text += state[5]["feature"]
-            setting_blit(setting_text)
-        display.flip()
-        clock.tick(asset_list["fps"])
+        
+        # 保持主线程运行
+        try:
+            while True:
+                sleep(1)
+        except KeyboardInterrupt:
+            print("\n✓ API 服务已停止")
+    else:
+        print("✗ Flask 未安装，无法启动 API 服务")
+        
 except Exception:
-        save_log(2, "E:", format_exc())
+    save_log(2, "E:", format_exc())
 finally:
     if not log[0][0]:
         save_json()
@@ -1450,7 +937,4 @@ finally:
                     if m != 0:
                         text = "  " + text
                     file.write(str(text) + "\n")
-    if state[7] == 2:
-        sleep(1)
-        Popen("Updater/updater.exe")
     _exit(0)
